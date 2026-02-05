@@ -1,3 +1,5 @@
+# FastAPI + spaCy + SBERT + Deterministic Logic + Enhanced PDF Extraction
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -16,6 +18,8 @@ app = FastAPI(title="Career Path Optimizer API")
 GEMINI_API_KEY = "AIzaSyAC1tTupH1zX2T4nVSZraQP3sH5Qfn-850"
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,6 +27,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initializing SBERT Model (loaded once at startup)
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 SKILLS_TAXONOMY = {
@@ -92,36 +98,53 @@ COURSES = [
     {"id": 10, "name": "Decoding DevOps – From Basics to Advanced Projects with AI", "skills": ["Linux", "Bash", "Git", "Jenkins"], "duration": 64, "rating": 4.6, "price": 399, "url": "https://www.udemy.com/course/decodingdevops/?couponCode=CP250105G1"},
 ]
 
+# ============================================================================
+# MODULE 1: ENHANCED RESUME PARSING WITH INTELLIGENT SECTION EXTRACTION
+# ============================================================================
+
+# Comprehensive list of technical skills section heading variations
 TECHNICAL_SKILLS_HEADINGS = [
+    # Standard variations
     r"technical\s+skills?",
     r"skills?",
     r"core\s+skills?",
     r"key\s+skills?",
     r"professional\s+skills?",
+    
+    # Technology-focused
     r"technologies?",
     r"technical\s+competencies",
     r"technical\s+expertise",
     r"tech\s+stack",
     r"technology\s+stack",
+    
+    # Programming-focused
     r"programming\s+skills?",
     r"programming\s+languages?",
     r"languages?\s+and\s+technologies",
     r"languages?\s+&\s+technologies",
-
+    
+    # Tools and frameworks
     r"tools?\s+and\s+technologies",
     r"tools?\s+&\s+technologies",
     r"frameworks?\s+and\s+tools?",
     r"technical\s+tools?",
+    
+    # Competencies
     r"technical\s+proficiencies",
     r"areas?\s+of\s+expertise",
     r"core\s+competencies",
     r"competencies",
+    
+    # Other variations
     r"software\s+skills?",
     r"it\s+skills?",
     r"computer\s+skills?",
     r"technical\s+skillset",
     r"skillset",
 ]
+
+# Section headings that should STOP skill extraction (next section markers)
 SECTION_STOP_MARKERS = [
     r"experience",
     r"work\s+experience",
@@ -143,7 +166,9 @@ SECTION_STOP_MARKERS = [
     r"profile",
 ]
 
+
 def parse_pdf(file_content: bytes) -> str:
+    """Parse PDF and extract raw text"""
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
         text = ""
@@ -157,77 +182,107 @@ def parse_pdf(file_content: bytes) -> str:
 
 
 def clean_text(text: str) -> str:
+    """Clean text while preserving structure for section detection"""
     if not text:
         return ""
     
+    # Remove special characters but keep structure
     text = re.sub(r'[^\w\s.,;:()\-+/#+\n]', '', text)
     
-
+    # Normalize excessive whitespace but preserve line breaks
     text = re.sub(r'[ \t]+', ' ', text)
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
     
     return text.strip()
 
+
 def extract_technical_skills_section(resume_text: str) -> Tuple[str, str]:
+    """
+    Intelligently extract the technical skills section from resume.
+    Returns: (skills_section_text, extraction_method)
     
+    Uses multiple strategies:
+    1. Pattern-based section detection (primary)
+    2. Structure-based extraction (secondary)
+    3. AI-assisted extraction (fallback)
+    """
+    
+    # Strategy 1: Pattern-based section detection
     skills_section, method = extract_section_by_patterns(resume_text)
     if skills_section and len(skills_section.strip()) > 20:
         return skills_section, method
     
+    # Strategy 2: Structure-based extraction (look for bullet points, lists)
     skills_section, method = extract_section_by_structure(resume_text)
     if skills_section and len(skills_section.strip()) > 20:
         return skills_section, method
     
+    # Strategy 3: AI-assisted extraction (fallback)
     skills_section, method = extract_section_by_ai(resume_text)
     if skills_section and len(skills_section.strip()) > 20:
         return skills_section, method
     
+    # Final fallback: return full text
     return resume_text, "fallback_full_text"
 
 
 def extract_section_by_patterns(text: str) -> Tuple[str, str]:
+    """Extract skills section using heading pattern matching"""
+    
     lines = text.split('\n')
     skills_start_idx = -1
     skills_end_idx = len(lines)
     matched_heading = ""
     
+    # Find skills section start
     for i, line in enumerate(lines):
         line_lower = line.lower().strip()
         
+        # Check if line matches any technical skills heading
         for heading_pattern in TECHNICAL_SKILLS_HEADINGS:
             if re.match(r'^\s*' + heading_pattern + r'\s*[:]*\s*$', line_lower):
                 skills_start_idx = i
                 matched_heading = line.strip()
                 break
+        
         if skills_start_idx != -1:
             break
     
+    # If no skills section found, return empty
     if skills_start_idx == -1:
         return "", "pattern_not_found"
     
+    # Find skills section end (next major section)
     for i in range(skills_start_idx + 1, len(lines)):
         line_lower = lines[i].lower().strip()
         
+        # Check if this line is a stop marker (next section)
         for stop_pattern in SECTION_STOP_MARKERS:
             if re.match(r'^\s*' + stop_pattern + r'\s*[:]*\s*$', line_lower):
                 skills_end_idx = i
                 break
+        
         if skills_end_idx != len(lines):
             break
     
+    # Extract the skills section
     skills_section = '\n'.join(lines[skills_start_idx + 1:skills_end_idx])
     
     return skills_section.strip(), f"pattern_match:{matched_heading}"
 
 
 def extract_section_by_structure(text: str) -> Tuple[str, str]:
+    """Extract skills by detecting bullet points and structured lists"""
+    
     lines = text.split('\n')
     potential_skills_blocks = []
     current_block = []
     in_skills_block = False
+    
     for line in lines:
         stripped = line.strip()
         
+        # Detect lines that look like skill entries (bullet points, commas, pipes)
         is_skill_line = bool(re.match(r'^[\•\-\*\→]', stripped)) or \
                        ',' in stripped or \
                        '|' in stripped or \
@@ -237,14 +292,17 @@ def extract_section_by_structure(text: str) -> Tuple[str, str]:
             in_skills_block = True
             current_block.append(line)
         elif in_skills_block:
+            # End of skills block
             if current_block:
                 potential_skills_blocks.append('\n'.join(current_block))
                 current_block = []
             in_skills_block = False
     
+    # Add final block if exists
     if current_block:
         potential_skills_blocks.append('\n'.join(current_block))
     
+    # Return the largest block (most likely the skills section)
     if potential_skills_blocks:
         largest_block = max(potential_skills_blocks, key=len)
         if len(largest_block) > 50:  # Minimum threshold
@@ -254,11 +312,14 @@ def extract_section_by_structure(text: str) -> Tuple[str, str]:
 
 
 def extract_section_by_ai(text: str) -> Tuple[str, str]:
+    """Use Gemini AI to intelligently extract technical skills section"""
+    
     try:
         prompt = f"""You are an expert resume parser. Extract ONLY the technical skills section from this resume.
 
 Resume Text:
-{text[:3000]}
+{text[:3000]}  # Limit to first 3000 chars for efficiency
+
 Instructions:
 - Find the section containing technical skills (programming languages, frameworks, tools, technologies)
 - Extract ONLY that section's content
@@ -277,16 +338,24 @@ Technical Skills Section:"""
         
     except Exception as e:
         print(f"AI extraction error: {str(e)}")
+    
     return "", "ai_extraction_failed"
 
+
 def parse_pdf_with_skills_extraction(file_content: bytes) -> Dict[str, str]:
+    """
+    Enhanced PDF parsing that extracts both full text and technical skills section
+    """
     try:
+        # Step 1: Extract raw text from PDF
         raw_text = parse_pdf(file_content)
         
         # Step 2: Clean the text
         cleaned_text = clean_text(raw_text)
         
+        # Step 3: Extract technical skills section
         skills_section, extraction_method = extract_technical_skills_section(cleaned_text)
+        
         return {
             "full_text": cleaned_text,
             "skills_section": skills_section,
@@ -298,10 +367,22 @@ def parse_pdf_with_skills_extraction(file_content: bytes) -> Dict[str, str]:
         raise HTTPException(status_code=400, detail=f"PDF parsing error: {str(e)}")
 
 
+# ============================================================================
+# MODULE 2: ENHANCED SKILL EXTRACTION (from skills section only)
+# ============================================================================
+
 def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]:
+    """
+    Extract skills from text with optional focus on skills section
+    
+    Args:
+        text: Either full resume text or extracted skills section
+        use_skills_section_only: If True, extract ONLY exact explicit skill name matches (no version inference)
+    """
     found_skills = []
     text_lower = text.lower()
     
+    # Enhanced pattern matching for skills
     for skill in ALL_SKILLS:
         # Create word boundary pattern
         pattern = r'\b' + re.escape(skill.lower()) + r'\b'
@@ -313,18 +394,21 @@ def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]
         # Strict mode: return only exact skill name matches
         return list(set(found_skills))
     
+    # Additional extraction: look for version numbers and frameworks
+    # e.g., "Python 3.x", "React 18", "Node.js 16"
     enhanced_skills = found_skills.copy()
     
-    
+    # Look for skills with versions or specifications
     version_patterns = [
         r'\b(python|java|node\.?js|react|angular|vue)\s*[\d.]+\b',
         r'\b(aws|azure|gcp)\s+(certified|associate|professional)\b',
     ]
+    
     for pattern in version_patterns:
         matches = re.finditer(pattern, text_lower)
         for match in matches:
             skill_name = match.group(1).title()
-            
+            # Normalize specific cases
             if 'node' in skill_name.lower():
                 skill_name = 'Node.js'
             if skill_name in ALL_SKILLS and skill_name not in enhanced_skills:
@@ -332,19 +416,31 @@ def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]
     
     return list(set(enhanced_skills))  # Remove duplicates
 
+
+# ============================================================================
+# MODULE 3: EMBEDDING MODULE (SBERT - Black Box Encoder)
+# ============================================================================
+
 def get_embeddings(texts: List[str]) -> np.ndarray:
+    """Convert text to semantic vectors using SBERT"""
     return sbert_model.encode(texts, convert_to_numpy=True)
 
+
+# ============================================================================
+# MODULE 4: SIMILARITY & GAP ANALYSIS (Deterministic Logic)
+# ============================================================================
 
 def normalize(skill: str) -> str:
     return skill.strip().lower()
 
 
 def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> float:
-    
+    """Calculate similarity between user skills and target skill"""
+    # HARD RULE: explicit resume claim = full proficiency
     if target_skill in user_skills:
         return 1.0
-    
+
+    # Otherwise, allow semantic inference
     if not user_skills:
         return 0.0
 
@@ -354,7 +450,12 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
     similarities = cosine_similarity(target_embedding, user_embeddings)[0]
     return float(np.max(similarities))
 
-    def analyze_skill_gaps(user_skills: List[str], role: str) -> Dict:
+
+def analyze_skill_gaps(user_skills: List[str], role: str) -> Dict:
+    """
+    Deterministic gap analysis with explicit thresholds
+    NO LLM INVOLVEMENT - Pure logic
+    """
     if role not in JOB_ROLES:
         raise HTTPException(status_code=404, detail=f"Role '{role}' not found")
 
@@ -364,6 +465,7 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
     importance = role_data.get("importance", {})
 
     all_target_skills = list(set(required_skills + preferred_skills))
+    
     skill_statuses = []
     total_score = 0
     max_possible_score = 0
@@ -372,6 +474,7 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
         similarity = calculate_skill_similarity(user_skills, skill)
         weight = importance.get(skill, 5)
         
+        # Deterministic thresholds
         if similarity >= 0.95:
             status = "strong"
             score = weight * 1.0
@@ -381,8 +484,10 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
         else:
             status = "missing"
             score = 0
+        
         total_score += score
         max_possible_score += weight
+        
         is_required = skill in required_skills
         
         skill_statuses.append({
@@ -409,6 +514,7 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
             "missing": sum(1 for s in skill_statuses if s["status"] == "missing")
         }
     }
+
 
 # ============================================================================
 # MODULE 5: COURSE RECOMMENDATION ENGINE
@@ -464,6 +570,7 @@ def recommend_courses(gap_analysis: Dict, max_recommendations: int = 5) -> List[
         })
     
     return recommendations
+
 
 # ============================================================================
 # MODULE 6: AI CAREER COUNSELOR (Gemini Integration)
@@ -578,6 +685,7 @@ class RoadmapRequest(BaseModel):
     role: str
     gap_analysis: Dict
     recommendations: List[Dict]
+
 
 # ============================================================================
 # API ENDPOINTS
@@ -705,7 +813,14 @@ async def analyze_resume_complete(
     role: str = Form("Data Scientist"),
     use_enhanced_extraction: bool = Form(True)
 ):
-
+    """
+    Complete analysis workflow with enhanced extraction:
+    1. Parse PDF resume (with intelligent skills section extraction)
+    2. Extract skills (from skills section primarily)
+    3. Analyze gaps
+    4. Recommend courses
+    5. Generate AI counselor advice and roadmap
+    """
     try:
         # Step 1: Enhanced PDF parsing
         if not file.filename.endswith('.pdf'):
@@ -778,4 +893,5 @@ def health_check():
         "version": "2.0-enhanced",
         "features": ["intelligent_skills_extraction", "multi_strategy_parsing", "ai_assisted_detection"]
     }
+
 
