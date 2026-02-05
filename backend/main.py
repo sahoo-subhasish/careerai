@@ -465,4 +465,100 @@ def recommend_courses(gap_analysis: Dict, max_recommendations: int = 5) -> List[
     
     return recommendations
 
+# ============================================================================
+# MODULE 6: AI CAREER COUNSELOR (Gemini Integration)
+# ============================================================================
+
+def generate_ai_counselor_advice(gap_analysis: Dict, user_skills: List[str], recommendations: List[Dict]) -> Dict:
+    """
+    Generate personalized career counseling using Gemini AI
+    """
+    try:
+        role = gap_analysis["role"]
+        readiness = gap_analysis["readiness_percentage"]
+        
+        strong_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "strong"]
+        partial_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "partial"]
+        missing_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "missing"]
+        
+        prompt = f"""You are an expert career counselor helping someone transition to a {role} role.
+
+Current Status:
+- Role Readiness: {readiness}%
+- Strong Skills: {', '.join(strong_skills[:5]) if strong_skills else 'None identified'}
+- Partial Skills: {', '.join(partial_skills[:5]) if partial_skills else 'None'}
+- Missing Critical Skills: {', '.join(missing_skills[:5]) if missing_skills else 'None'}
+
+Recommended Courses:
+{json.dumps([{"name": r["name"], "skills": r["skills"]} for r in recommendations[:3]], indent=2)}
+
+Provide:
+1. A personalized, encouraging counseling message (2-3 paragraphs)
+2. A 6-month learning roadmap divided into 3 phases (2 months each)
+
+Format your response as JSON:
+{{
+    "counseling": "Your personalized message here...",
+    "roadmap": {{
+        "month1_2": {{
+            "title": "Phase 1 Title",
+            "description": "What to focus on",
+            "focus_skills": ["skill1", "skill2", "skill3"]
+        }},
+        "month3_4": {{
+            "title": "Phase 2 Title",
+            "description": "What to focus on",
+            "focus_skills": ["skill1", "skill2"]
+        }},
+        "month5_6": {{
+            "title": "Phase 3 Title",
+            "description": "What to focus on",
+            "focus_skills": ["skill1", "skill2"]
+        }}
+    }}
+}}
+
+Be specific, actionable, and motivating. Reference their current strengths."""
+
+        response = gemini_model.generate_content(prompt)
+        response_text = ""
+        for part in response.parts:
+            if hasattr(part, 'text'):
+                response_text += part.text
+        response_text = response_text.strip()
+        
+        # Try to extract JSON from response
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            result = {
+                "counseling": response_text if response_text else f"I've analyzed your profile for {role}. You have a strong foundation with skills like {', '.join(strong_skills[:3]) if strong_skills else 'several key areas'}, but there are critical gaps in {', '.join(missing_skills[:3]) if missing_skills else 'some areas'}. Focus on the recommended courses to close these gaps and build practical projects to demonstrate your skills.",
+                "roadmap": {
+                    "month1_2": {"title": "Foundations & Critical Gaps", "description": "Focus on the most critical missing skills", "focus_skills": missing_skills[:3] if missing_skills else []},
+                    "month3_4": {"title": "Intermediate Skills & Projects", "description": "Strengthen partial skills and build projects", "focus_skills": partial_skills[:3] if partial_skills else []},
+                    "month5_6": {"title": "Job Readiness & Portfolio", "description": "Complete portfolio projects and interview prep", "focus_skills": []}
+                }
+            }
+        
+        return result
+    except Exception as e:
+        print(f"Gemini API error: {str(e)}")
+        # Fallback response
+        strong_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "strong"]
+        missing_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "missing"]
+        return {
+            "counseling": f"I've analyzed your profile for {gap_analysis['role']}. You have a strong foundation in {', '.join(strong_skills[:3]) if strong_skills else 'several areas'}, but there are critical gaps in {', '.join(missing_skills[:3]) if missing_skills else 'key areas'}. Focus on the recommended courses to close these gaps and build practical projects.",
+            "roadmap": {
+                "month1_2": {"title": "Foundations & Gaps", "description": "Focus on critical gaps", "focus_skills": missing_skills[:3] if missing_skills else []},
+                "month3_4": {"title": "Advanced Skills", "description": "Build practical expertise", "focus_skills": []},
+                "month5_6": {"title": "Job Ready", "description": "Portfolio and interview prep", "focus_skills": []}
+            }
+        }
+
 
