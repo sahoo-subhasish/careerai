@@ -579,4 +579,203 @@ class RoadmapRequest(BaseModel):
     gap_analysis: Dict
     recommendations: List[Dict]
 
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
+
+@app.get("/")
+def root():
+    return {
+        "message": "Career Path Optimizer API - Enhanced Edition",
+        "version": "2.0",
+        "features": [
+            "Intelligent technical skills section extraction",
+            "Multi-strategy PDF parsing",
+            "AI-assisted skill detection"
+        ],
+        "endpoints": [
+            "/parse-resume-pdf",
+            "/parse-resume-enhanced",
+            "/extract-skills",
+            "/analyze-gaps",
+            "/recommend-courses",
+            "/analyze-resume",
+            "/available-roles"
+        ]
+    }
+
+
+@app.post("/parse-resume-pdf")
+async def parse_resume_pdf(file: UploadFile = File(...)):
+    """Basic PDF parsing - returns full text"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files supported")
+    
+    content = await file.read()
+    text = parse_pdf(content)
+    cleaned = clean_text(text)
+    
+    return {
+        "text": cleaned,
+        "length": len(cleaned)
+    }
+
+
+@app.post("/parse-resume-enhanced")
+async def parse_resume_enhanced(file: UploadFile = File(...)):
+    """
+    Enhanced PDF parsing - extracts both full text and technical skills section
+    Returns detailed extraction metadata
+    """
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files supported")
+    
+    content = await file.read()
+    result = parse_pdf_with_skills_extraction(content)
+    
+    return {
+        "full_text": result["full_text"],
+        "skills_section": result["skills_section"],
+        "extraction_method": result["extraction_method"],
+        "full_text_length": len(result["full_text"]),
+        "skills_section_length": result["skills_section_length"],
+        "extraction_successful": result["skills_section_length"] > 20
+    }
+
+
+@app.post("/parse-resume-text")
+def parse_resume_text(data: ResumeText):
+    """Parse text resume"""
+    cleaned = clean_text(data.text)
+    return {
+        "text": cleaned,
+        "length": len(cleaned)
+    }
+
+
+@app.post("/extract-skills")
+def extract_skills_endpoint(data: ResumeText):
+    """Extract skills from text"""
+    skills = extract_skills(data.text)
+    return {
+        "skills": skills,
+        "count": len(skills)
+    }
+
+
+@app.post("/analyze-gaps")
+def analyze_gaps_endpoint(data: AnalysisRequest):
+    """Analyze skill gaps"""
+    gap_analysis = analyze_skill_gaps(data.skills, data.role)
+    return gap_analysis
+
+
+@app.post("/recommend-courses")
+def recommend_courses_endpoint(data: AnalysisRequest):
+    """Recommend courses based on gaps"""
+    gap_analysis = analyze_skill_gaps(data.skills, data.role)
+    recommendations = recommend_courses(gap_analysis)
+    return {
+        "recommendations": recommendations,
+        "count": len(recommendations)
+    }
+
+
+@app.get("/available-roles")
+def get_available_roles():
+    """Get all available job roles"""
+    return {
+        "roles": list(JOB_ROLES.keys()),
+        "count": len(JOB_ROLES)
+    }
+
+
+@app.get("/skills-taxonomy")
+def get_skills_taxonomy():
+    """Get complete skills taxonomy"""
+    return {
+        "taxonomy": SKILLS_TAXONOMY,
+        "total_skills": len(ALL_SKILLS)
+    }
+
+
+@app.post("/analyze-resume")
+async def analyze_resume_complete(
+    file: UploadFile = File(...),
+    role: str = Form("Data Scientist"),
+    use_enhanced_extraction: bool = Form(True)
+):
+
+    try:
+        # Step 1: Enhanced PDF parsing
+        if not file.filename.endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files supported")
+        
+        content = await file.read()
+        
+        if use_enhanced_extraction:
+            # Use enhanced extraction with skills section focus
+            parsed_result = parse_pdf_with_skills_extraction(content)
+            
+            # If valid skills section exists, use ONLY skills from that section
+            if parsed_result["skills_section_length"] > 20:
+                user_skills = extract_skills(parsed_result["skills_section"], use_skills_section_only=True)
+                extraction_info = {
+                    "method": parsed_result["extraction_method"],
+                    "skills_section_found": True,
+                    "skills_extracted_from": "section_only",
+                    "total_unique_skills": len(user_skills)
+                }
+            else:
+                # Fallback: extract from full text if no valid skills section found
+                user_skills = extract_skills(parsed_result["full_text"], use_skills_section_only=False)
+                extraction_info = {
+                    "method": parsed_result["extraction_method"],
+                    "skills_section_found": False,
+                    "skills_extracted_from": "full_text_fallback",
+                    "total_unique_skills": len(user_skills)
+                }
+        else:
+            # Use basic extraction
+            resume_text = parse_pdf(content)
+            cleaned_text = clean_text(resume_text)
+            user_skills = extract_skills(cleaned_text)
+            extraction_info = {
+                "method": "basic_full_text_extraction",
+                "total_skills": len(user_skills)
+            }
+        
+        # Step 2: Analyze gaps
+        gap_analysis = analyze_skill_gaps(user_skills, role)
+        
+        # Step 3: Recommend courses
+        recommendations = recommend_courses(gap_analysis)
+        
+        # Step 4: Generate AI counselor advice
+        ai_advice = generate_ai_counselor_advice(gap_analysis, user_skills, recommendations)
+        
+        return {
+            "success": True,
+            "extraction_info": extraction_info,
+            "user_skills": sorted(user_skills),
+            "gap_analysis": gap_analysis,
+            "recommendations": recommendations,
+            "ai_counselor": ai_advice["counseling"],
+            "roadmap": ai_advice["roadmap"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "model": "all-MiniLM-L6-v2",
+        "version": "2.0-enhanced",
+        "features": ["intelligent_skills_extraction", "multi_strategy_parsing", "ai_assisted_detection"]
+    }
 
