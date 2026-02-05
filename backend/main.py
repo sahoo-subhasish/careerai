@@ -410,4 +410,59 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
         }
     }
 
- 
+# ============================================================================
+# MODULE 5: COURSE RECOMMENDATION ENGINE
+# ============================================================================
+
+def recommend_courses(gap_analysis: Dict, max_recommendations: int = 5) -> List[Dict]:
+    """
+    Recommend courses based on skill gaps
+    Prioritizes: missing required skills > partial skills > preferred skills
+    """
+    missing_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "missing" and s["required"]]
+    partial_skills = [s["skill"] for s in gap_analysis["skills"] if s["status"] == "partial"]
+    
+    priority_skills = missing_skills + partial_skills
+    
+    course_scores = []
+    
+    for course in COURSES:
+        course_skills = set([s.lower() for s in course["skills"]])
+        priority_skills_lower = set([s.lower() for s in priority_skills])
+        
+        # Calculate overlap
+        overlap = len(course_skills.intersection(priority_skills_lower))
+        
+        if overlap > 0:
+            # Score = overlap * rating * (1/price_factor)
+            price_factor = course["price"] / 400  # Normalize around 400
+            score = overlap * course["rating"] / price_factor
+            
+            course_scores.append({
+                "course": course,
+                "score": score,
+                "relevant_skills": list(course_skills.intersection(priority_skills_lower))
+            })
+    
+    # Sort by score
+    course_scores.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Return top recommendations
+    recommendations = []
+    for item in course_scores[:max_recommendations]:
+        course = item["course"]
+        recommendations.append({
+            "id": course["id"],
+            "name": course["name"],
+            "skills": course["skills"],
+            "duration": course["duration"],
+            "rating": course["rating"],
+            "price": course["price"],
+            "url": course["url"],
+            "relevance_score": round(item["score"], 2),
+            "addresses_gaps": item["relevant_skills"]
+        })
+    
+    return recommendations
+
+
