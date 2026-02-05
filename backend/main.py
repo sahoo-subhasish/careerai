@@ -278,3 +278,56 @@ Technical Skills Section:"""
     except Exception as e:
         print(f"AI extraction error: {str(e)}")
     return "", "ai_extraction_failed"
+
+def parse_pdf_with_skills_extraction(file_content: bytes) -> Dict[str, str]:
+    try:
+        raw_text = parse_pdf(file_content)
+        
+        # Step 2: Clean the text
+        cleaned_text = clean_text(raw_text)
+        
+        skills_section, extraction_method = extract_technical_skills_section(cleaned_text)
+        return {
+            "full_text": cleaned_text,
+            "skills_section": skills_section,
+            "extraction_method": extraction_method,
+            "skills_section_length": len(skills_section)
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"PDF parsing error: {str(e)}")
+
+
+def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]:
+    found_skills = []
+    text_lower = text.lower()
+    
+    for skill in ALL_SKILLS:
+        # Create word boundary pattern
+        pattern = r'\b' + re.escape(skill.lower()) + r'\b'
+        if re.search(pattern, text_lower):
+            found_skills.append(skill)
+    
+    # Only apply version-based inference if NOT in strict section-only mode
+    if use_skills_section_only:
+        # Strict mode: return only exact skill name matches
+        return list(set(found_skills))
+    
+    enhanced_skills = found_skills.copy()
+    
+    
+    version_patterns = [
+        r'\b(python|java|node\.?js|react|angular|vue)\s*[\d.]+\b',
+        r'\b(aws|azure|gcp)\s+(certified|associate|professional)\b',
+    ]
+    for pattern in version_patterns:
+        matches = re.finditer(pattern, text_lower)
+        for match in matches:
+            skill_name = match.group(1).title()
+            
+            if 'node' in skill_name.lower():
+                skill_name = 'Node.js'
+            if skill_name in ALL_SKILLS and skill_name not in enhanced_skills:
+                enhanced_skills.append(skill_name)
+    
+    return list(set(enhanced_skills))  # Remove duplicates
