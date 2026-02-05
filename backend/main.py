@@ -331,3 +331,25 @@ def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]
                 enhanced_skills.append(skill_name)
     
     return list(set(enhanced_skills))  # Remove duplicates
+
+    def get_embeddings(texts: List[str]) -> np.ndarray:
+    return sbert_model.encode(texts, convert_to_numpy=True)
+
+
+def normalize(skill: str) -> str:
+    return skill.strip().lower()
+
+
+def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> float:
+    
+    if target_skill in user_skills:
+        return 1.0
+    
+    if not user_skills:
+        return 0.0
+
+    target_embedding = get_embeddings([target_skill])
+    user_embeddings = get_embeddings(user_skills)
+
+    similarities = cosine_similarity(target_embedding, user_embeddings)[0]
+    return float(np.max(similarities))
