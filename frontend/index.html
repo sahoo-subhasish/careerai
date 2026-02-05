@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerAI - Career Path Optimizer</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+    <header class="header-container">
+
+        <div class="brand-row">
+            <div class="logo">
+                <div class="logo-icon"><i class="fas fa-chart-line"></i></div>
+                CareerAI
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <i class="fas fa-moon" id="themeIcon"></i>
+            </button>
+        </div>
+
+        <div class="page-header-row">
+            <div>
+                <div class="breadcrumb" id="statusText">Ready for Analysis</div>
+                <h1 class="page-title" id="pageTitle">Career Path Analysis</h1>
+            </div>
+
+            <div class="action-controls">
+                <select id="roleSelector" class="role-select">
+                    <option value="Data Scientist">Data Scientist</option>
+                    <option value="Full Stack Developer">Full Stack Developer</option>
+                    <option value="DevOps Engineer">DevOps Engineer</option>
+                    <option value="Backend Developer">Backend Developer</option>
+                    <option value="Frontend Developer">Frontend Developer</option>
+                </select>
+
+                <input type="file" id="resumeUpload" hidden accept=".pdf">
+
+                <button class="btn" onclick="document.getElementById('resumeUpload').click()">
+                    <i class="fas fa-upload"></i> <span id="fileName">Upload PDF</span>
+                </button>
+
+                <button class="btn btn-primary" onclick="startAnalysis()">
+                    <i class="fas fa-magic"></i> Analyze
+                </button>
+
+                <div id="uploadError" class="error-msg">Upload resume to start</div>
+            </div>
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="dashboard-grid">
+
+            <div class="col-scroll left-col">
+                <div class="card">
+                    <div class="score-container">
+                        <svg class="score-svg" viewBox="0 0 160 160">
+                            <circle class="score-circle-bg" cx="80" cy="80" r="70"></circle>
+                            <circle id="scoreCircle" class="score-circle-fill" cx="80" cy="80" r="70"></circle>
+                        </svg>
+                        <div class="score-text-center">
+                            <div class="score-val" id="matchScore">0%</div>
+                            <div class="score-label"><span>MATCH</span><span>SCORE</span></div>
+                        </div>
+                    </div>
+                    <div class="score-trend" id="matchTrend">Upload resume to start</div>
+                </div>
+
+                <div class="card">
+                    <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">SKILL GAPS</h3>
+
+                    <div class="gap-header strong">
+                        <i class="fas fa-check-circle"></i> Strong Matches
+                        <span style="margin-left: auto;" id="countStrong">0</span>
+                    </div>
+                    <ul class="gap-list" id="listStrong"></ul>
+
+                    <div class="gap-header improvement">
+                        <i class="fas fa-exclamation-triangle"></i> Improvement
+                        <span style="margin-left: auto;" id="countPartial">0</span>
+                    </div>
+                    <ul class="gap-list" id="listPartial"></ul>
+
+                    <div class="gap-header critical">
+                        <i class="fas fa-times-circle"></i> Critical Gaps
+                        <span style="margin-left: auto;" id="countMissing">0</span>
+                    </div>
+                    <ul class="gap-list" id="listMissing"></ul>
+                </div>
+            </div>
+
+            <div class="col-scroll middle-col">
+                <div class="card">
+                    <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Skill Analysis Matrix</h3>
+                    <div
+                        style="font-size: 0.75rem; color: var(--text-sub); display: grid; grid-template-columns: 2fr 1fr 3fr 40px; margin-bottom: 0.5rem; text-transform: uppercase; font-weight: 600;">
+                        <span>Skill</span>
+                        <span>Imp.</span>
+                        <span>Alignment Score</span>
+                        <span>%</span>
+                    </div>
+                    <div id="skillMatrix">
+                        <div style="text-align: center; padding: 2rem; color: var(--text-sub);">No data available</div>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-main);">
+                    Recommended Courses</h3>
+                <div id="courseGrid" class="courses-grid-container">
+                </div>
+            </div>
+
+            <div class="col-scroll right-col">
+                <div class="ai-card">
+                    <div class="ai-header">
+                        <div
+                            style="width: 40px; height: 40px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; color: var(--text-main);">AI Counsellor</div>
+                            <div style="font-size: 0.8rem; color: var(--text-sub);">Personalized Insights</div>
+                        </div>
+                    </div>
+                    <div class="ai-body">
+                        <div class="chat-bubble" id="aiAdvice">
+                            Hi! I'm your AI career assistant. Upload your resume and select a target role to get a
+                            personalized analysis and learning roadmap.
+                        </div>
+
+                        <div
+                            style="margin-bottom: 1.5rem; font-size: 0.8rem; font-weight: 700; color: var(--text-sub); letter-spacing: 0.5px;">
+                            LEARNING ROADMAP
+                        </div>
+
+                        <div class="timeline" id="roadmapContainer">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loader">
+        <div class="spinner"></div>
+        <p style="margin-top: 1rem;">Analyzing Resume...</p>
+    </div>
+
+    <script src="js/main.js"></script>
+</body>
+
+</html>
