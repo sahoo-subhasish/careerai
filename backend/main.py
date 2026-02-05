@@ -142,3 +142,139 @@ SECTION_STOP_MARKERS = [
     r"objective",
     r"profile",
 ]
+
+def parse_pdf(file_content: bytes) -> str:
+    try:
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+        text = ""
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+        return text
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"PDF parsing error: {str(e)}")
+
+
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
+    
+    text = re.sub(r'[^\w\s.,;:()\-+/#+\n]', '', text)
+    
+
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+    
+    return text.strip()
+
+def extract_technical_skills_section(resume_text: str) -> Tuple[str, str]:
+    
+    skills_section, method = extract_section_by_patterns(resume_text)
+    if skills_section and len(skills_section.strip()) > 20:
+        return skills_section, method
+    
+    skills_section, method = extract_section_by_structure(resume_text)
+    if skills_section and len(skills_section.strip()) > 20:
+        return skills_section, method
+    
+    skills_section, method = extract_section_by_ai(resume_text)
+    if skills_section and len(skills_section.strip()) > 20:
+        return skills_section, method
+    
+    return resume_text, "fallback_full_text"
+
+
+def extract_section_by_patterns(text: str) -> Tuple[str, str]:
+    lines = text.split('\n')
+    skills_start_idx = -1
+    skills_end_idx = len(lines)
+    matched_heading = ""
+    
+    for i, line in enumerate(lines):
+        line_lower = line.lower().strip()
+        
+        for heading_pattern in TECHNICAL_SKILLS_HEADINGS:
+            if re.match(r'^\s*' + heading_pattern + r'\s*[:]*\s*$', line_lower):
+                skills_start_idx = i
+                matched_heading = line.strip()
+                break
+        if skills_start_idx != -1:
+            break
+    
+    if skills_start_idx == -1:
+        return "", "pattern_not_found"
+    
+    for i in range(skills_start_idx + 1, len(lines)):
+        line_lower = lines[i].lower().strip()
+        
+        for stop_pattern in SECTION_STOP_MARKERS:
+            if re.match(r'^\s*' + stop_pattern + r'\s*[:]*\s*$', line_lower):
+                skills_end_idx = i
+                break
+        if skills_end_idx != len(lines):
+            break
+    
+    skills_section = '\n'.join(lines[skills_start_idx + 1:skills_end_idx])
+    
+    return skills_section.strip(), f"pattern_match:{matched_heading}"
+
+
+def extract_section_by_structure(text: str) -> Tuple[str, str]:
+    lines = text.split('\n')
+    potential_skills_blocks = []
+    current_block = []
+    in_skills_block = False
+    for line in lines:
+        stripped = line.strip()
+        
+        is_skill_line = bool(re.match(r'^[\•\-\*\→]', stripped)) or \
+                       ',' in stripped or \
+                       '|' in stripped or \
+                       re.search(r'\b(python|java|javascript|sql|aws|docker|react)\b', stripped.lower())
+        
+        if is_skill_line:
+            in_skills_block = True
+            current_block.append(line)
+        elif in_skills_block:
+            if current_block:
+                potential_skills_blocks.append('\n'.join(current_block))
+                current_block = []
+            in_skills_block = False
+    
+    if current_block:
+        potential_skills_blocks.append('\n'.join(current_block))
+    
+    if potential_skills_blocks:
+        largest_block = max(potential_skills_blocks, key=len)
+        if len(largest_block) > 50:  # Minimum threshold
+            return largest_block, "structure_based_extraction"
+    
+    return "", "structure_not_found"
+
+
+def extract_section_by_ai(text: str) -> Tuple[str, str]:
+    try:
+        prompt = f"""You are an expert resume parser. Extract ONLY the technical skills section from this resume.
+
+Resume Text:
+{text[:3000]}
+Instructions:
+- Find the section containing technical skills (programming languages, frameworks, tools, technologies)
+- Extract ONLY that section's content
+- Do NOT include work experience, education, or other sections
+- If multiple skill sections exist, combine them
+- Return ONLY the extracted skills text, nothing else
+- If no clear skills section exists, return "NOT_FOUND"
+
+Technical Skills Section:"""
+
+        response = gemini_model.generate_content(prompt)
+        extracted_text = response.text.strip()
+        
+        if extracted_text and extracted_text != "NOT_FOUND" and len(extracted_text) > 20:
+            return extracted_text, "ai_assisted_extraction"
+        
+    except Exception as e:
+        print(f"AI extraction error: {str(e)}")
+    return "", "ai_extraction_failed"
