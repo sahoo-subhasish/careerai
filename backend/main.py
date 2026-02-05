@@ -332,7 +332,7 @@ def extract_skills(text: str, use_skills_section_only: bool = True) -> List[str]
     
     return list(set(enhanced_skills))  # Remove duplicates
 
-    def get_embeddings(texts: List[str]) -> np.ndarray:
+def get_embeddings(texts: List[str]) -> np.ndarray:
     return sbert_model.encode(texts, convert_to_numpy=True)
 
 
@@ -353,3 +353,61 @@ def calculate_skill_similarity(user_skills: List[str], target_skill: str) -> flo
 
     similarities = cosine_similarity(target_embedding, user_embeddings)[0]
     return float(np.max(similarities))
+
+    def analyze_skill_gaps(user_skills: List[str], role: str) -> Dict:
+    if role not in JOB_ROLES:
+        raise HTTPException(status_code=404, detail=f"Role '{role}' not found")
+
+    role_data = JOB_ROLES[role]
+    required_skills = role_data["required"]
+    preferred_skills = role_data.get("preferred", [])
+    importance = role_data.get("importance", {})
+
+    all_target_skills = list(set(required_skills + preferred_skills))
+    skill_statuses = []
+    total_score = 0
+    max_possible_score = 0
+
+    for skill in all_target_skills:
+        similarity = calculate_skill_similarity(user_skills, skill)
+        weight = importance.get(skill, 5)
+        
+        if similarity >= 0.95:
+            status = "strong"
+            score = weight * 1.0
+        elif similarity >= 0.7:
+            status = "partial"
+            score = weight * 0.6
+        else:
+            status = "missing"
+            score = 0
+        total_score += score
+        max_possible_score += weight
+        is_required = skill in required_skills
+        
+        skill_statuses.append({
+            "skill": skill,
+            "similarity": round(similarity, 3),
+            "status": status,
+            "required": is_required,
+            "weight": weight
+        })
+    
+    # Calculate readiness percentage
+    readiness = (total_score / max_possible_score * 100) if max_possible_score > 0 else 0
+    
+    # Sort by importance
+    skill_statuses.sort(key=lambda x: x["weight"], reverse=True)
+    
+    return {
+        "role": role,
+        "readiness_percentage": round(readiness, 1),
+        "skills": skill_statuses,
+        "summary": {
+            "strong": sum(1 for s in skill_statuses if s["status"] == "strong"),
+            "partial": sum(1 for s in skill_statuses if s["status"] == "partial"),
+            "missing": sum(1 for s in skill_statuses if s["status"] == "missing")
+        }
+    }
+
+ 
