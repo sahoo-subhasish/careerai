@@ -562,3 +562,21 @@ Be specific, actionable, and motivating. Reference their current strengths."""
         }
 
 
+# ============================================================================
+# API MODELS
+# ============================================================================
+
+class ResumeText(BaseModel):
+    text: str
+
+class AnalysisRequest(BaseModel):
+    skills: List[str]
+    role: str
+
+class RoadmapRequest(BaseModel):
+    user_skills: List[str]
+    role: str
+    gap_analysis: Dict
+    recommendations: List[Dict]
+
+
